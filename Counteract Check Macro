@@ -1,17 +1,21 @@
-// PF2e Counteract Macro for Foundry VTT — v3
-// Prompts for your modifier, DC, your counter‑act rank, and the opposing rank.
+// PF2e Counteract Macro for Foundry VTT — v4
+// Prompts for your base modifier, situational bonuses/penalties, DC, your counter‑act rank, and the opposing rank.
 // You can either **roll inside the dialog** or click **Use Last Roll** to pull
 // in the most recent d20 roll you made in chat.
 // Implements the rule: if your counteract rank exceeds the opposing rank,
 // treat a normal failure as a success (only a critical failure remains a failure).
-// Shows the ranks and DC in the chat results.
+// Shows the ranks, DC, and full roll breakdown (including bonuses/penalties) in the chat results.
 
 (async () => {
   const content = `
   <form>
     <div class="form-group">
-      <label>Your Modifier</label>
+      <label>Base Modifier</label>
       <input type="number" name="modifier" value="0"/>
+    </div>
+    <div class="form-group">
+      <label>Bonuses / Penalties</label>
+      <input type="number" name="bonus" value="0"/>
     </div>
     <div class="form-group">
       <label>Opposing DC</label>
@@ -28,8 +32,8 @@
   </form>`;
 
   // Helper to evaluate result and send chat card
-  async function resolveCounteract({roll, mod, dc, yourRank, oppRank}) {
-    const total = roll.total + mod; // Add modifier if the roll was d20 only
+  async function resolveCounteract({roll, mod, bonus, dc, yourRank, oppRank}) {
+    const total = roll.total + mod + bonus; // Add base modifier and situational bonuses/penalties
 
     // Determine degree of success per PF2e rules
     const diff = total - dc;
@@ -50,14 +54,17 @@
 
     const resultText = counteracted ? '<span class="success">Effect Counteracted!</span>' : '<span class="failure">Effect NOT Counteracted.</span>';
 
+    const modString = mod ? ` + ${mod}` : '';
+    const bonusString = bonus ? ` ${bonus >= 0 ? '+ ' : '- '}${Math.abs(bonus)}` : '';
+
     const chatContent = `
       <div class="pf2e chat-card">
         <header class="card-header flexrow">
-          <img src="icons/svg/d20.svg" width="36" height="36" />
+          <img src="icons/svg/d20-black.svg" width="36" height="36" />
           <h3>Counteract Check</h3>
         </header>
         <div class="card-content">
-          <p><strong>Roll:</strong> ${roll.result} ${mod ? `+ ${mod}` : ''}= <strong>${total}</strong></p>
+          <p><strong>Roll:</strong> ${roll.result}${modString}${bonusString}= <strong>${total}</strong></p>
           <p><strong>DC:</strong> ${dc}</p>
           <p><strong>Your Rank / Opposing Rank:</strong> ${yourRank} / ${oppRank}</p>
           <p><strong>Degree of Success:</strong> ${degree}</p>
@@ -83,13 +90,14 @@
         label: "Roll",
         callback: async html => {
           const mod = Number(html.find('[name="modifier"]').val());
+          const bonus = Number(html.find('[name="bonus"]').val());
           const dc = Number(html.find('[name="dc"]').val());
           const yourRank = Number(html.find('[name="yourRank"]').val());
           const oppRank = Number(html.find('[name="oppRank"]').val());
 
           const roll = await (new Roll('1d20')).roll({async:false});
           await roll.toMessage({flavor: "Counteract d20 Roll"});
-          resolveCounteract({roll, mod, dc, yourRank, oppRank});
+          resolveCounteract({roll, mod, bonus, dc, yourRank, oppRank});
         }
       },
       useLast: {
@@ -104,11 +112,12 @@
           const roll = lastMsg.rolls[0];
 
           const mod = Number(html.find('[name="modifier"]').val());
+          const bonus = Number(html.find('[name="bonus"]').val());
           const dc = Number(html.find('[name="dc"]').val());
           const yourRank = Number(html.find('[name="yourRank"]').val());
           const oppRank = Number(html.find('[name="oppRank"]').val());
 
-          resolveCounteract({roll, mod, dc, yourRank, oppRank});
+          resolveCounteract({roll, mod, bonus, dc, yourRank, oppRank});
         }
       },
       cancel: {
