@@ -1,0 +1,120 @@
+// PF2e Counteract Macro for Foundry VTT — v3
+// Prompts for your modifier, DC, your counter‑act rank, and the opposing rank.
+// You can either **roll inside the dialog** or click **Use Last Roll** to pull
+// in the most recent d20 roll you made in chat.
+// Implements the rule: if your counteract rank exceeds the opposing rank,
+// treat a normal failure as a success (only a critical failure remains a failure).
+// Shows the ranks and DC in the chat results.
+
+(async () => {
+  const content = `
+  <form>
+    <div class="form-group">
+      <label>Your Modifier</label>
+      <input type="number" name="modifier" value="0"/>
+    </div>
+    <div class="form-group">
+      <label>Opposing DC</label>
+      <input type="number" name="dc" value="20"/>
+    </div>
+    <div class="form-group">
+      <label>Your Counteract Rank</label>
+      <input type="number" name="yourRank" value="1"/>
+    </div>
+    <div class="form-group">
+      <label>Opposing Rank</label>
+      <input type="number" name="oppRank" value="1"/>
+    </div>
+  </form>`;
+
+  // Helper to evaluate result and send chat card
+  async function resolveCounteract({roll, mod, dc, yourRank, oppRank}) {
+    const total = roll.total + mod; // Add modifier if the roll was d20 only
+
+    // Determine degree of success per PF2e rules
+    const diff = total - dc;
+    let degree = diff >= 10 ? 'critical success' :
+                 diff >= 0  ? 'success' :
+                 diff <= -10 ? 'critical failure' : 'failure';
+
+    // Rank superiority: upgrade failure to success if your rank > opposing rank (unless crit failure)
+    if (yourRank > oppRank && degree === 'failure') degree = 'success';
+
+    // Check level caps to see if the effect is actually counteracted
+    let counteracted = false;
+    if (degree === 'critical success') {
+      counteracted = yourRank <= oppRank + 3;
+    } else if (degree === 'success') {
+      counteracted = yourRank <= oppRank + 1;
+    }
+
+    const resultText = counteracted ? '<span class="success">Effect Counteracted!</span>' : '<span class="failure">Effect NOT Counteracted.</span>';
+
+    const chatContent = `
+      <div class="pf2e chat-card">
+        <header class="card-header flexrow">
+          <img src="icons/svg/d20.svg" width="36" height="36" />
+          <h3>Counteract Check</h3>
+        </header>
+        <div class="card-content">
+          <p><strong>Roll:</strong> ${roll.result} ${mod ? `+ ${mod}` : ''}= <strong>${total}</strong></p>
+          <p><strong>DC:</strong> ${dc}</p>
+          <p><strong>Your Rank / Opposing Rank:</strong> ${yourRank} / ${oppRank}</p>
+          <p><strong>Degree of Success:</strong> ${degree}</p>
+          <p>${resultText}</p>
+        </div>
+      </div>`;
+
+    ChatMessage.create({
+      user: game.user.id,
+      speaker: ChatMessage.getSpeaker(),
+      content: chatContent,
+      type: CONST.CHAT_MESSAGE_TYPES.ROLL,
+      roll
+    });
+  }
+
+  new Dialog({
+    title: "Counteract Check",
+    content,
+    buttons: {
+      roll: {
+        icon: '<i class="fas fa-dice-d20"></i>',
+        label: "Roll",
+        callback: async html => {
+          const mod = Number(html.find('[name="modifier"]').val());
+          const dc = Number(html.find('[name="dc"]').val());
+          const yourRank = Number(html.find('[name="yourRank"]').val());
+          const oppRank = Number(html.find('[name="oppRank"]').val());
+
+          const roll = await (new Roll('1d20')).roll({async:false});
+          await roll.toMessage({flavor: "Counteract d20 Roll"});
+          resolveCounteract({roll, mod, dc, yourRank, oppRank});
+        }
+      },
+      useLast: {
+        icon: '<i class="fas fa-history"></i>',
+        label: "Use Last Roll",
+        callback: html => {
+          const lastMsg = [...game.messages].reverse().find(m => m.user.id === game.user.id && m.isRoll && m.rolls?.length);
+          if (!lastMsg) {
+            ui.notifications.warn("No previous roll found for your user.");
+            return;
+          }
+          const roll = lastMsg.rolls[0];
+
+          const mod = Number(html.find('[name="modifier"]').val());
+          const dc = Number(html.find('[name="dc"]').val());
+          const yourRank = Number(html.find('[name="yourRank"]').val());
+          const oppRank = Number(html.find('[name="oppRank"]').val());
+
+          resolveCounteract({roll, mod, dc, yourRank, oppRank});
+        }
+      },
+      cancel: {
+        label: 'Cancel'
+      }
+    },
+    default: 'roll'
+  }).render(true);
+})();
